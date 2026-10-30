@@ -1,3 +1,707 @@
+import { useEffect, useMemo, useState } from 'react';
+import {
+  Activity,
+  BriefcaseBusiness,
+  ChartNoAxesCombined,
+  ChevronDown,
+  Database,
+  FileSearch,
+  Filter,
+  LayoutDashboard,
+  RefreshCw,
+  Search,
+  ShieldCheck,
+  TrendingUp,
+  Users,
+  AlertTriangle,
+} from 'lucide-react';
+import {
+  Area,
+  AreaChart,
+  CartesianGrid,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
+
+const API = (import.meta.env.VITE_API_BASE_URL || `${import.meta.env.BASE_URL}api`).replace(/\/$/, '');
+
+type Stock = {
+  ticker: string;
+  company: string;
+  price?: number;
+  currency?: string;
+  sector?: string;
+  market_cap_label?: string;
+  quality_score: number;
+  quality: string;
+  perf_20d?: number;
+  perf_3m?: number;
+  adr20?: number;
+  rel_volume?: number;
+  failed_filters?: string[];
+  unknown_filters?: string[];
+  status: string;
+  as_of?: string;
+};
+
+const demo: Stock[] = [
+  {
+    ticker: 'MU',
+    company: 'Micron Technology',
+    price: 238.4,
+    currency: 'USD',
+    sector: 'Technology',
+    market_cap_label: '$267B',
+    quality_score: 86,
+    quality: 'Review',
+    perf_20d: 14.2,
+    perf_3m: 48.1,
+    adr20: 4.6,
+    rel_volume: 1.4,
+    failed_filters: ['operating_cashflow'],
+    unknown_filters: [],
+    status: 'ok',
+  },
+  {
+    ticker: 'NVDA',
+    company: 'NVIDIA',
+    price: 189.2,
+    currency: 'USD',
+    sector: 'Technology',
+    market_cap_label: '$4.6T',
+    quality_score: 100,
+    quality: 'Pass',
+    perf_20d: 8.1,
+    perf_3m: 31.4,
+    adr20: 3.2,
+    rel_volume: 1.2,
+    failed_filters: [],
+    unknown_filters: [],
+    status: 'ok',
+  },
+  {
+    ticker: 'APP',
+    company: 'AppLovin',
+    price: 412.6,
+    currency: 'USD',
+    sector: 'Technology',
+    market_cap_label: '$140B',
+    quality_score: 86,
+    quality: 'Review',
+    perf_20d: 12.4,
+    perf_3m: 56.2,
+    adr20: 5.1,
+    rel_volume: 1.8,
+    failed_filters: ['debt_equity'],
+    unknown_filters: [],
+    status: 'ok',
+  },
+  {
+    ticker: 'ANET',
+    company: 'Arista Networks',
+    price: 143.8,
+    currency: 'USD',
+    sector: 'Technology',
+    market_cap_label: '$180B',
+    quality_score: 100,
+    quality: 'Pass',
+    perf_20d: 6.3,
+    perf_3m: 28.7,
+    adr20: 2.8,
+    rel_volume: 1.1,
+    failed_filters: [],
+    unknown_filters: [],
+    status: 'ok',
+  },
+  {
+    ticker: 'PLTR',
+    company: 'Palantir',
+    price: 171.1,
+    currency: 'USD',
+    sector: 'Technology',
+    market_cap_label: '$400B',
+    quality_score: 86,
+    quality: 'Review',
+    perf_20d: 17.1,
+    perf_3m: 62.0,
+    adr20: 5.8,
+    rel_volume: 1.6,
+    failed_filters: ['long_trend'],
+    unknown_filters: [],
+    status: 'ok',
+  },
+  {
+    ticker: 'AMD',
+    company: 'Advanced Micro Devices',
+    price: 221.3,
+    currency: 'USD',
+    sector: 'Technology',
+    market_cap_label: '$360B',
+    quality_score: 71,
+    quality: 'Review',
+    perf_20d: 4.1,
+    perf_3m: 18.6,
+    adr20: 3.9,
+    rel_volume: 0.8,
+    failed_filters: ['relative_volume', 'revenue_growth'],
+    unknown_filters: [],
+    status: 'ok',
+  },
+];
+
+const chartData = [
+  { d: 'Mo', v: 92 },
+  { d: 'Di', v: 95 },
+  { d: 'Mi', v: 91 },
+  { d: 'Do', v: 101 },
+  { d: 'Fr', v: 106 },
+  { d: 'Mo', v: 103 },
+  { d: 'Di', v: 112 },
+  { d: 'Mi', v: 118 },
+  { d: 'Do', v: 115 },
+  { d: 'Fr', v: 124 },
+  { d: 'Mo', v: 128 },
+  { d: 'Di', v: 134 },
+];
+
+const nav = [
+  ['Overview', LayoutDashboard],
+  ['Quality Stocks', ShieldCheck],
+  ['Opportunity Radar', TrendingUp],
+  ['Social Intelligence', Users],
+  ['Trump & Politics', BriefcaseBusiness],
+  ['Fact Check', FileSearch],
+  ['Trading Lab', ChartNoAxesCombined],
+] as const;
+
+function fmt(value?: number, suffix = '') {
+  return value == null || !Number.isFinite(value)
+    ? '—'
+    : `${value > 0 ? '+' : ''}${value.toFixed(1)}${suffix}`;
+}
+
+function cleanFilters(filters?: string[]) {
+  return Array.isArray(filters) ? filters.filter(Boolean) : [];
+}
+
+function formatFilterName(value: string) {
+  return value.replaceAll('_', ' ');
+}
+
+export default function App() {
+  const [page, setPage] = useState('Overview');
+  const [stocks, setStocks] = useState<Stock[]>(demo);
+  const [summary, setSummary] = useState<any>({
+    total: 18,
+    priced: 18,
+    quality_count: 5,
+    avg_quality_score: 82,
+    updated_at: 'Demo-Daten',
+  });
+  const [social, setSocial] = useState<any[]>([]);
+  const [politics, setPolitics] = useState<any[]>([]);
+  const [facts, setFacts] = useState<any[]>([]);
+  const [query, setQuery] = useState('');
+  const [busy, setBusy] = useState(true);
+  const [error, setError] = useState('');
+
+  async function load() {
+    setBusy(true);
+    setError('');
+
+    try {
+      const [summaryData, stockData, socialData, politicsData, factData] = await Promise.all(
+        ['summary.json', 'stocks.json', 'social.json', 'politics.json', 'fact-checks.json'].map(
+          async (fileName) => {
+            const response = await fetch(`${API}/${fileName}`);
+            if (!response.ok) {
+              throw new Error(`${fileName}: ${response.status}`);
+            }
+            return response.json();
+          },
+        ),
+      );
+
+      setSummary(summaryData || {});
+      setStocks(Array.isArray(stockData?.stocks) ? stockData.stocks : []);
+      setSocial(Array.isArray(socialData?.items) ? socialData.items : []);
+      setPolitics(Array.isArray(politicsData?.items) ? politicsData.items : []);
+      setFacts(Array.isArray(factData?.items) ? factData.items : []);
+    } catch (e: any) {
+      setError(
+        'Noch keine veröffentlichten Live-Daten. Demo-Ansicht aktiv. ' +
+          (e?.message || 'Unbekannter Ladefehler'),
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  const visible = useMemo(
+    () =>
+      stocks.filter((stock) => {
+        const matchesPage =
+          page === 'Quality Stocks'
+            ? stock.quality === 'Pass'
+            : page === 'Opportunity Radar'
+              ? stock.quality !== 'Pass'
+              : true;
+        const matchesSearch = `${stock.ticker} ${stock.company}`
+          .toLowerCase()
+          .includes(query.toLowerCase());
+        return matchesPage && matchesSearch;
+      }),
+    [stocks, page, query],
+  );
+
+  const pass = stocks.filter((stock) => stock.quality === 'Pass').length;
+  const review = stocks.filter((stock) => stock.quality === 'Review').length;
+  const fail = stocks.filter(
+    (stock) => stock.quality === 'Fail' || stock.quality === 'Unavailable',
+  ).length;
+  const reviewShare = stocks.length ? (review / stocks.length) * 100 : 0;
+  const passShare = stocks.length ? (pass / stocks.length) * 100 : 0;
+
+  return (
+    <div className="shell">
+      <aside className="sidebar">
+        <div className="brand">
+          <div className="brandIcon">
+            <Activity size={21} />
+          </div>
+          <div>
+            <b>
+              STOCK<span>INTEL</span>
+            </b>
+            <small>INTELLIGENCE COCKPIT</small>
+          </div>
+        </div>
+
+        <div className="workspace">
+          <span className="liveDot" /> MARKET WORKSPACE <ChevronDown size={14} />
+        </div>
+        <div className="navLabel">WORKSPACE</div>
+
+        {nav.map(([name, Icon]) => (
+          <button
+            key={name}
+            className={`navItem ${page === name ? 'active' : ''}`}
+            onClick={() => setPage(name)}
+          >
+            <Icon size={17} />
+            {name}
+            {name === 'Opportunity Radar' && (
+              <i>{stocks.filter((stock) => stock.quality !== 'Pass').length}</i>
+            )}
+          </button>
+        ))}
+
+        <div className="sideBottom">
+          <div className="plan">
+            <div className="planIcon">
+              <Database size={17} />
+            </div>
+            <div>
+              <b>Free data pipeline</b>
+              <small>GitHub Actions · Python</small>
+            </div>
+            <span className="greenTag">ON</span>
+          </div>
+          <small className="muted">STOCK INTELLIGENCE · V1.0</small>
+        </div>
+      </aside>
+
+      <main className="main">
+        <header className="topbar">
+          <div className="crumb">
+            <span>Workspace</span>
+            <b>/</b>
+            {page}
+          </div>
+          <div className="topActions">
+            <span className="marketStatus">
+              <span className="liveDot" /> DATA PIPELINE
+            </span>
+            <button className="iconBtn" onClick={load} title="Aktualisieren">
+              <RefreshCw size={16} className={busy ? 'spin' : ''} />
+            </button>
+            <div className="avatar">SI</div>
+          </div>
+        </header>
+
+        <section className="content">
+          <div className="heading">
+            <div>
+              <div className="eyebrow">MARKET INTELLIGENCE / {page.toUpperCase()}</div>
+              <h1>{page === 'Overview' ? 'Market overview' : page}</h1>
+              <p>
+                {page === 'Overview'
+                  ? 'Dein täglicher Überblick über Marktqualität, Momentum und Chancen.'
+                  : 'Analysiere Marktchancen mit nachvollziehbaren Daten und klaren Qualitätsfiltern.'}
+              </p>
+            </div>
+            <button className="primaryBtn" onClick={load}>
+              <RefreshCw size={15} /> Daten aktualisieren
+            </button>
+          </div>
+
+          {error && (
+            <div className="notice">
+              <AlertTriangle size={16} />
+              {error}
+            </div>
+          )}
+
+          <div className="metricGrid">
+            <Metric
+              icon={<Database />}
+              label="UNIVERSUM"
+              value={summary.total ?? stocks.length}
+              sub="Aktien im Scanner"
+              tone="blue"
+            />
+            <Metric
+              icon={<ShieldCheck />}
+              label="QUALITY PASS"
+              value={summary.quality_count ?? pass}
+              sub="Balanced Filter bestanden"
+              tone="green"
+            />
+            <Metric
+              icon={<TrendingUp />}
+              label="Ø QUALITY SCORE"
+              value={`${summary.avg_quality_score ?? 0}/100`}
+              sub="Fundamental + technisch"
+              tone="purple"
+            />
+            <Metric
+              icon={<Activity />}
+              label="MARKTDATEN"
+              value={summary.priced ?? stocks.length}
+              sub="Mit Kursdaten"
+              tone="amber"
+            />
+          </div>
+
+          {page === 'Overview' && (
+            <div className="dashboardGrid">
+              <div className="panel performance">
+                <div className="panelHead">
+                  <div>
+                    <h3>Momentum overview</h3>
+                    <p>Illustrativer Markt-Momentum-Index</p>
+                  </div>
+                  <span className="period">12 sessions⌄</span>
+                </div>
+                <div className="chartValue">
+                  134.0 <span>+45.7% <small>im Zeitraum</small></span>
+                </div>
+                <div className="chart">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={chartData}>
+                      <defs>
+                        <linearGradient id="fill" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="#36d6a0" stopOpacity={0.25} />
+                          <stop offset="95%" stopColor="#36d6a0" stopOpacity={0} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid stroke="#202b3b" vertical={false} />
+                      <XAxis
+                        dataKey="d"
+                        tick={{ fill: '#738197', fontSize: 11 }}
+                        axisLine={false}
+                        tickLine={false}
+                      />
+                      <YAxis hide domain={['dataMin-10', 'dataMax+10']} />
+                      <Tooltip
+                        contentStyle={{
+                          background: '#111a28',
+                          border: '1px solid #29364a',
+                          borderRadius: 10,
+                          color: '#fff',
+                        }}
+                      />
+                      <Area
+                        type="monotone"
+                        dataKey="v"
+                        stroke="#36d6a0"
+                        strokeWidth={2.5}
+                        fill="url(#fill)"
+                      />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+                <div className="chartFoot">
+                  <span>
+                    <i className="legendDot" /> Relative strength (Demo)
+                  </span>
+                  <span>Keine Portfolio-Performance</span>
+                </div>
+              </div>
+
+              <div className="panel qualityPanel">
+                <div className="panelHead">
+                  <div>
+                    <h3>Quality distribution</h3>
+                    <p>Balanced quality filter</p>
+                  </div>
+                  <ShieldCheck size={18} />
+                </div>
+                <div className="donutWrap">
+                  <div
+                    className="donut"
+                    style={{
+                      background: `conic-gradient(#35d6a0 0 ${passShare}%, #f0ad4e ${passShare}% ${
+                        passShare + reviewShare
+                      }%, #273348 ${passShare + reviewShare}% 100%)`,
+                    }}
+                  >
+                    <div>
+                      <b>{Math.round(passShare)}%</b>
+                      <small>PASS RATE</small>
+                    </div>
+                  </div>
+                </div>
+                <div className="legend">
+                  <span>
+                    <i className="g" />Pass <b>{pass}</b>
+                  </span>
+                  <span>
+                    <i className="y" />Review <b>{review}</b>
+                  </span>
+                  <span>
+                    <i className="s" />Unavailable / Fail <b>{fail}</b>
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {['Overview', 'Quality Stocks', 'Opportunity Radar'].includes(page) && (
+            <div className="panel tablePanel">
+              <div className="panelHead tableTitle">
+                <div>
+                  <h3>
+                    {page === 'Overview'
+                      ? 'Top stock candidates'
+                      : page === 'Quality Stocks'
+                        ? 'Quality stocks'
+                        : 'Opportunity radar'}
+                  </h3>
+                  <p>
+                    {page === 'Opportunity Radar'
+                      ? 'Nicht bestandene und nicht verfügbare Filter werden getrennt angezeigt.'
+                      : 'Sortiert nach Balanced Quality Score und Momentum.'}
+                  </p>
+                </div>
+                <div className="tableTools">
+                  <div className="search">
+                    <Search size={15} />
+                    <input
+                      placeholder="Aktie suchen…"
+                      value={query}
+                      onChange={(event) => setQuery(event.target.value)}
+                    />
+                  </div>
+                  <button className="filterBtn" type="button" title="Weitere Filter folgen">
+                    <Filter size={15} /> Filter
+                  </button>
+                </div>
+              </div>
+
+              <div className="tableScroll">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>COMPANY</th>
+                      <th>PRICE</th>
+                      <th>QUALITY</th>
+                      <th>SCORE</th>
+                      <th>1M CHANGE</th>
+                      <th>3M CHANGE</th>
+                      <th>ADR20</th>
+                      <th>REL. VOL.</th>
+                      <th>FILTER STATUS</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {visible.map((stock) => {
+                      const failed = cleanFilters(stock.failed_filters);
+                      const unknown = cleanFilters(stock.unknown_filters);
+
+                      return (
+                        <tr key={stock.ticker}>
+                          <td>
+                            <div className="stockName">
+                              <div className="tickerIcon">{stock.ticker.slice(0, 1)}</div>
+                              <div>
+                                <b>{stock.company}</b>
+                                <small>
+                                  {stock.ticker} · {stock.sector || '—'}
+                                </small>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="price">
+                            {stock.price != null
+                              ? `${stock.price.toFixed(2)} ${stock.currency || ''}`
+                              : '—'}
+                          </td>
+                          <td>
+                            <span
+                              className={`status ${
+                                stock.quality === 'Pass'
+                                  ? 'pass'
+                                  : stock.quality === 'Review'
+                                    ? 'review'
+                                    : 'fail'
+                              }`}
+                            >
+                              {stock.quality || 'Unknown'}
+                            </span>
+                          </td>
+                          <td>
+                            <b>{Number.isFinite(stock.quality_score) ? stock.quality_score : '—'}</b>
+                            <small className="muted"> / 100</small>
+                          </td>
+                          <td
+                            className={
+                              stock.perf_20d != null && stock.perf_20d >= 0
+                                ? 'positive'
+                                : 'negative'
+                            }
+                          >
+                            {fmt(stock.perf_20d, '%')}
+                          </td>
+                          <td
+                            className={
+                              stock.perf_3m != null && stock.perf_3m >= 0
+                                ? 'positive'
+                                : 'negative'
+                            }
+                          >
+                            {fmt(stock.perf_3m, '%')}
+                          </td>
+                          <td>{fmt(stock.adr20, '%')}</td>
+                          <td>{fmt(stock.rel_volume, 'x')}</td>
+                          <td>
+                            <span className="filterCount">{failed.length} failed</span>
+                            {failed.length > 0 && (
+                              <small className="failedText">
+                                {failed.map(formatFilterName).join(', ')}
+                              </small>
+                            )}
+                            <span className="filterCount">{unknown.length} unknown</span>
+                            {unknown.length > 0 && (
+                              <small className="failedText">
+                                {unknown.map(formatFilterName).join(', ')}
+                              </small>
+                            )}
+                            {failed.length === 0 && unknown.length === 0 && (
+                              <small className="muted">Alle Filter verfügbar und bestanden</small>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+                {visible.length === 0 && (
+                  <div className="empty">Keine passenden Aktien gefunden.</div>
+                )}
+              </div>
+
+              <div className="tableFoot">
+                <span>
+                  Zeige {visible.length} von {stocks.length} Aktien
+                </span>
+                <span>Stand: {summary.updated_at || '—'}</span>
+              </div>
+            </div>
+          )}
+
+          {page === 'Social Intelligence' && (
+            <DataTable
+              title="Social signals · last 24h"
+              subtitle="Importierte Hinweise – keine automatische Plattformabdeckung"
+              rows={social}
+              cols={['date', 'ticker', 'platform', 'author', 'claim', 'url']}
+            />
+          )}
+          {page === 'Trump & Politics' && (
+            <DataTable
+              title="Politician transaction tracker"
+              subtitle="Offenlegung ist kein Kaufsignal. Prüfe Transaktionsdatum und Veröffentlichungsdatum."
+              rows={politics}
+              cols={['date', 'politician', 'ticker', 'transaction', 'amount_range', 'disclosure_url']}
+            />
+          )}
+          {page === 'Fact Check' && (
+            <DataTable
+              title="Source verification"
+              subtitle="Behauptungen gegen verlinkte Primärquellen prüfen"
+              rows={facts}
+              cols={['date', 'ticker', 'claim', 'verdict', 'evidence_url', 'notes']}
+            />
+          )}
+
+          {page === 'Trading Lab' && (
+            <div className="dashboardGrid">
+              <div className="panel">
+                <div className="panelHead">
+                  <div>
+                    <h3>Qullamaggie setup checklist</h3>
+                    <p>Long-only · Daily timeframe · Swing</p>
+                  </div>
+                  <Activity />
+                </div>
+                {[
+                  'Strong prior run-up (ideally 30%+)',
+                  'Tight consolidation near EMA 10 / EMA 21',
+                  'EMA 10 above EMA 21',
+                  'Price above SMA 50 and SMA 200',
+                  'Volume contracts during consolidation',
+                  'Breakout on expanding relative volume',
+                  'Stop below setup low / pivot structure',
+                  'Risk per trade and position size defined',
+                ].map((item, index) => (
+                  <div className="checkRow" key={item}>
+                    <span className="checkNum">{String(index + 1).padStart(2, '0')}</span>
+                    {item}
+                    <span className="muted">—</span>
+                  </div>
+                ))}
+              </div>
+              <div className="panel">
+                <h3>Position sizing calculator</h3>
+                <p className="sub">Beispielwerte – vor jedem Trade aktualisieren.</p>
+                <Calc />
+              </div>
+            </div>
+          )}
+
+          <footer>
+            <span>
+              <span className="liveDot" /> SYSTEM READY
+            </span>
+            <span>Data source: Yahoo Finance · Python pipeline · GitHub Actions</span>
+            <span>Not financial advice</span>
+          </footer>
+        </section>
+      </main>
+    </div>
+  );
+}
+
+function Metric({
+  icon,
+  label,
   value,
   sub,
   tone,
