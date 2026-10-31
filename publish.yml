@@ -26,6 +26,8 @@ jobs:
           cache-dependency-path: backend/requirements.txt
       - name: Install Python dependencies
         run: pip install -r backend/requirements.txt
+      - name: Build stock universe
+        run: python backend/build_universe.py
       - name: Generate market data JSON
         run: python backend/run_pipeline.py
       - uses: actions/setup-node@v4
